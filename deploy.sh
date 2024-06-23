@@ -2,7 +2,7 @@
 
 # Step 1: Build the Go binary
 echo "Building Go binary..."
-GOOS=linux GOARCH=amd64 go build ./main.go|| { echo "Go build failed"; exit 1; }
+GOOS=linux GOARCH=amd64 go build ./server.go -o main || { echo "Go build failed"; exit 1; }
 
 # Step 2: SCP the Go binary to the EC2 instance
 echo "Copying Go binary to EC2 instance..."
