@@ -7,16 +7,16 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
-
-	"github.com/ncruces/go-sqlite3"
-	_ "github.com/ncruces/go-sqlite3/embed"
+	// "github.com/ncruces/go-sqlite3"
+	// _ "github.com/ncruces/go-sqlite3/embed"
 )
 
 func main() {
+
 	http.HandleFunc("/", helloHandler)
-	http.HandleFunc("/create", createDbHandler)
 
 	// Determine if we're in a local development environment
 	isLocalDev, exists := os.LookupEnv("PERSONAL_SITE_DEV")
@@ -34,21 +34,41 @@ func main() {
 		cleanup()
 		os.Exit(0)
 	}()
-
 	if isLocalDev == "true" {
 		// For local development, just use http
-		log.Println("Starting HTTP server on :8080")
-		err := http.ListenAndServe(":8080", nil)
+		log.Println("Starting HTTP server on :8888")
+		err := http.ListenAndServe(":8888", nil)
 		if err != nil {
 			log.Fatal("HTTP server error: ", err)
 		}
 
 	} else {
+		httpOnly := false
+
 		cert, err := tls.LoadX509KeyPair("/etc/letsencrypt/live/jacksonstone.info/fullchain.pem",
 			"/etc/letsencrypt/live/jacksonstone.info/privkey.pem")
 
 		if err != nil {
-			log.Fatal(err)
+			print(err)
+			// Fall back to http only, as maybe we are setting up the ssls for the first time
+			httpOnly = true
+		}
+		cert2, err := tls.LoadX509KeyPair("/etc/letsencrypt/live/libby.cards/fullchain.pem",
+			"/etc/letsencrypt/live/libby.cards/privkey.pem")
+
+		if err != nil {
+			print(err)
+			// Fall back to http only, as maybe we are setting up the ssls for the first time
+			httpOnly = true
+		}
+
+		cert3, err := tls.LoadX509KeyPair("/etc/letsencrypt/live/theologian.chat/fullchain.pem",
+			"/etc/letsencrypt/live/theologian.chat/privkey.pem")
+
+		if err != nil {
+			print(err)
+			// Fall back to http only, as maybe we are setting up the ssls for the first time
+			httpOnly = true
 		}
 
 		go func() {
@@ -63,8 +83,10 @@ func main() {
 				log.Fatalf("ListenAndServe error: %v", err)
 			}
 		}()
-
-		cfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+		if httpOnly {
+			return
+		}
+		cfg := &tls.Config{Certificates: []tls.Certificate{cert, cert2, cert3}}
 		srv := &http.Server{
 			Addr:      ":443",
 			TLSConfig: cfg,
@@ -75,7 +97,25 @@ func main() {
 }
 
 func helloHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Hello, World! This is my site, hosted on an EC2 mirco. The only feature right now is it auto renews HTTPS certs :D\nI plan to put more things here at some point...")
+	host := r.Host
+	// Check if the host starts with "www.", prefer this for CDN reasons? Something like that.
+	if !strings.HasPrefix(host, "www.") {
+		// Prepend "www." to the host
+		newHost := "www." + host
+		newURL := "https://" + newHost + r.URL.Path
+		if r.URL.RawQuery != "" {
+			newURL += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, newURL, http.StatusMovedPermanently)
+		return
+	}
+	if strings.Contains(r.Host, "jacksonstone.info") {
+		fmt.Fprintf(w, "Hello, World! This is my site, hosted on an EC2 mirco. The only feature right now is it auto renews HTTPS certs :D\nI plan to put more things here at some point...")
+	} else if strings.Contains(r.Host, "libby.cards") {
+		fmt.Print("This is the Libby.cards site")
+	} else if strings.Contains(r.Host, "theologian.chat") {
+		fmt.Print("This is the theologian.chat site")
+	}
 }
 
 func redirectToTls(w http.ResponseWriter, r *http.Request) {
@@ -104,17 +144,17 @@ func cleanup() {
 
 }
 
-func createDbHandler(w http.ResponseWriter, r *http.Request) {
+// func createDbHandler(w http.ResponseWriter, r *http.Request) {
 
-	db, err := sqlite3.Open("personalDb")
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = db.Exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`)
-	if err != nil {
-		log.Fatal(err)
-	}
+// 	db, err := sqlite3.Open("personalDb")
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	err = db.Exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`)
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
 
-	fmt.Fprintf(w, "Tables Created")
+// 	fmt.Fprintf(w, "Tables Created")
 
-}
+// }
