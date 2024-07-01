@@ -71,28 +71,33 @@ func main() {
 			httpOnly = true
 		}
 
-		go func() {
-			prodHttpMux := http.NewServeMux()
-			// For DNS Challenge task required to renew SSL on the server every 60 or so days.
-			// This is done on an ubuntu E2C box with certbot which has been configured to create these files here when it is attempting to renew
-			// The Go server will then serve up these files over Port 80 for Let's Encrypt to hit and sign my new shiny certs with confidence.
-			prodHttpMux.Handle("/.well-known/", http.StripPrefix("/.well-known/", http.FileServer(http.Dir("/home/ubuntu/.well-known"))))
-			// All other requests we want to redirect to HTTPS in prod
-			prodHttpMux.HandleFunc("/", redirectToTls)
-			if err := http.ListenAndServe(":80", prodHttpMux); err != nil {
-				log.Fatalf("ListenAndServe error: %v", err)
+		if !httpOnly {
+			go startHTTPServer()
+			cfg := &tls.Config{Certificates: []tls.Certificate{cert, cert2, cert3}}
+			srv := &http.Server{
+				Addr:      ":443",
+				TLSConfig: cfg,
 			}
-		}()
-		if httpOnly {
-			return
-		}
-		cfg := &tls.Config{Certificates: []tls.Certificate{cert, cert2, cert3}}
-		srv := &http.Server{
-			Addr:      ":443",
-			TLSConfig: cfg,
+			fmt.Println("Starting HTTPS server on :443")
+			log.Fatal(srv.ListenAndServeTLS("", ""))
+		} else {
+			fmt.Println("Skipping HTTPS server start as no certs were found. This is likely because the server is being set up for the first time.")
+			startHTTPServer()
 		}
 
-		log.Fatal(srv.ListenAndServeTLS("", ""))
+	}
+}
+func startHTTPServer() {
+	prodHttpMux := http.NewServeMux()
+	// For DNS Challenge task required to renew SSL on the server every 60 or so days.
+	// This is done on an ubuntu E2C box with certbot which has been configured to create these files here when it is attempting to renew
+	// The Go server will then serve up these files over Port 80 for Let's Encrypt to hit and sign my new shiny certs with confidence.
+	prodHttpMux.Handle("/.well-known/", http.StripPrefix("/.well-known/", http.FileServer(http.Dir("/home/ubuntu/.well-known"))))
+	// All other requests we want to redirect to HTTPS in prod
+	prodHttpMux.HandleFunc("/", redirectToTls)
+	fmt.Println("Starting HTTP server on :80")
+	if err := http.ListenAndServe(":80", prodHttpMux); err != nil {
+		log.Fatalf("ListenAndServe error: %v", err)
 	}
 }
 
