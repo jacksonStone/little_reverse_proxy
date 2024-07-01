@@ -10,30 +10,36 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	// "github.com/ncruces/go-sqlite3"
-	// _ "github.com/ncruces/go-sqlite3/embed"
 )
 
+// Create a struct to hold domain and port number
+type domainPort struct {
+	domain string
+	port   string
+}
+
 func main() {
+	// Domains
+	sites := []domainPort{
+		{"jacksonstone.info", ":3000"},
+		{"libby.cards", ":3001"},
+		{"theologian.chat", ":3002"}}
+	// extract all domains
+	domains := make([]string, len(sites))
+	for i, site := range sites {
+		domains[i] = site.domain
+	}
 
 	http.HandleFunc("/", helloHandler)
 
 	// Determine if we're in a local development environment
-	isLocalDev, exists := os.LookupEnv("PERSONAL_SITE_DEV")
+	isLocalDev, exists := os.LookupEnv("LOCAL_DEV")
 	if !exists {
 		isLocalDev = "false"
 	}
-	// Set up channel to receive OS signals
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 
-	// Start a goroutine to handle shutdown signals
-	go func() {
-		sig := <-sigs
-		fmt.Printf("Received signal: %v\n", sig)
-		cleanup()
-		os.Exit(0)
-	}()
+	exitListener()
+
 	if isLocalDev == "true" {
 		// For local development, just use http
 		log.Println("Starting HTTP server on :8888")
@@ -43,37 +49,10 @@ func main() {
 		}
 
 	} else {
-		httpOnly := false
-
-		cert, err := tls.LoadX509KeyPair("/etc/letsencrypt/live/jacksonstone.info/fullchain.pem",
-			"/etc/letsencrypt/live/jacksonstone.info/privkey.pem")
-
-		if err != nil {
-			print(err)
-			// Fall back to http only, as maybe we are setting up the ssls for the first time
-			httpOnly = true
-		}
-		cert2, err := tls.LoadX509KeyPair("/etc/letsencrypt/live/libby.cards/fullchain.pem",
-			"/etc/letsencrypt/live/libby.cards/privkey.pem")
-
-		if err != nil {
-			print(err)
-			// Fall back to http only, as maybe we are setting up the ssls for the first time
-			httpOnly = true
-		}
-
-		cert3, err := tls.LoadX509KeyPair("/etc/letsencrypt/live/theologian.chat/fullchain.pem",
-			"/etc/letsencrypt/live/theologian.chat/privkey.pem")
-
-		if err != nil {
-			print(err)
-			// Fall back to http only, as maybe we are setting up the ssls for the first time
-			httpOnly = true
-		}
-
+		httpOnly, certs := getSSLCerts(domains)
 		if !httpOnly {
 			go startHTTPServer()
-			cfg := &tls.Config{Certificates: []tls.Certificate{cert, cert2, cert3}}
+			cfg := &tls.Config{Certificates: certs}
 			srv := &http.Server{
 				Addr:      ":443",
 				TLSConfig: cfg,
@@ -86,6 +65,29 @@ func main() {
 		}
 
 	}
+}
+func getSSLCerts(domains []string) (bool, []tls.Certificate) {
+	certs := make([]tls.Certificate, 0)
+	httpOnly := false
+	for _, domain := range domains {
+		httpOnlyForDomain, cert := getSSLCert(domain)
+		if httpOnlyForDomain {
+			httpOnly = true
+		}
+		certs = append(certs, cert)
+	}
+	return httpOnly, certs
+}
+
+// bool is httpOnly
+func getSSLCert(domain string) (bool, tls.Certificate) {
+	cert, err := tls.LoadX509KeyPair("/etc/letsencrypt/live/"+domain+"/fullchain.pem",
+		"/etc/letsencrypt/live/"+domain+"/privkey.pem")
+	httpOnly := err != nil
+	if httpOnly {
+		fmt.Println("Failed to fetch SSL certs for domain: " + domain)
+	}
+	return httpOnly, cert
 }
 func startHTTPServer() {
 	prodHttpMux := http.NewServeMux()
@@ -129,8 +131,20 @@ func redirectToTls(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, newURL, http.StatusMovedPermanently)
 }
 
-func cleanup() {
-	// Create a file
+func exitListener() {
+	// Set up channel to receive OS signals
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+	// Start a goroutine to handle shutdown signals
+	go func() {
+		sig := <-sigs
+		fmt.Printf("Received signal: %v\n", sig)
+		cleanupProcedure()
+		os.Exit(0)
+	}()
+}
+
+func cleanupProcedure() {
 	file, err := os.Create("cleanup.txt")
 	if err != nil {
 		fmt.Println("An error occurred while creating the file:", err)
@@ -144,22 +158,5 @@ func cleanup() {
 		fmt.Println("An error occurred while writing to the file:", err)
 		return
 	}
-
 	fmt.Println("File created and written successfully")
-
 }
-
-// func createDbHandler(w http.ResponseWriter, r *http.Request) {
-
-// 	db, err := sqlite3.Open("personalDb")
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	err = db.Exec(`CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-
-// 	fmt.Fprintf(w, "Tables Created")
-
-// }

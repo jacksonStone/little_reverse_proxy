@@ -17,3 +17,4 @@ ssh -i /Users/jacksonstone/Desktop/Jackson\ Personal\ Site\ Key.pem ubuntu@3.19.
 EOF
 
 echo "Script completed successfully."
+rm main
