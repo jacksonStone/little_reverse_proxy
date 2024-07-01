@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -18,19 +20,26 @@ type domainPort struct {
 	port   string
 }
 
-func main() {
-	// Domains
-	sites := []domainPort{
-		{"jacksonstone.info", ":3000"},
-		{"libby.cards", ":3001"},
-		{"theologian.chat", ":3002"}}
-	// extract all domains
-	domains := make([]string, len(sites))
-	for i, site := range sites {
-		domains[i] = site.domain
-	}
+var sites = []domainPort{
+	{"jacksonstone.info", ":3000"},
+	{"libby.cards", ":3001"},
+	{"theologian.chat", ":3002"}}
 
-	http.HandleFunc("/", helloHandler)
+var reverseProxyMap = make(map[string]*httputil.ReverseProxy)
+
+func initializeReverseProxies() {
+	for _, site := range sites {
+		target, err := url.Parse(fmt.Sprintf("http://localhost%s", site.port))
+		if err != nil {
+			log.Fatalf("Failed to parse URL: %v", err)
+		}
+		reverseProxyMap[site.domain] = httputil.NewSingleHostReverseProxy(target)
+	}
+}
+func main() {
+	initializeReverseProxies()
+
+	http.HandleFunc("/", rootHandler)
 
 	// Determine if we're in a local development environment
 	isLocalDev, exists := os.LookupEnv("LOCAL_DEV")
@@ -49,7 +58,7 @@ func main() {
 		}
 
 	} else {
-		httpOnly, certs := getSSLCerts(domains)
+		httpOnly, certs := getSSLCerts()
 		if !httpOnly {
 			go startHTTPServer()
 			cfg := &tls.Config{Certificates: certs}
@@ -66,13 +75,18 @@ func main() {
 
 	}
 }
-func getSSLCerts(domains []string) (bool, []tls.Certificate) {
+func getSSLCerts() (bool, []tls.Certificate) {
+	domains := make([]string, len(sites))
+	for i, site := range sites {
+		domains[i] = site.domain
+	}
 	certs := make([]tls.Certificate, 0)
 	httpOnly := false
 	for _, domain := range domains {
 		httpOnlyForDomain, cert := getSSLCert(domain)
 		if httpOnlyForDomain {
 			httpOnly = true
+			continue
 		}
 		certs = append(certs, cert)
 	}
@@ -103,7 +117,7 @@ func startHTTPServer() {
 	}
 }
 
-func helloHandler(w http.ResponseWriter, r *http.Request) {
+func rootHandler(w http.ResponseWriter, r *http.Request) {
 	host := r.Host
 	// Check if the host starts with "www.", prefer this for CDN reasons? Something like that.
 	if !strings.HasPrefix(host, "www.") {
@@ -116,12 +130,15 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, newURL, http.StatusMovedPermanently)
 		return
 	}
-	if strings.Contains(r.Host, "jacksonstone.info") {
-		fmt.Fprintf(w, "Hello, World! This is my site, hosted on an EC2 mirco. The only feature right now is it auto renews HTTPS certs :D\nI plan to put more things here at some point...")
-	} else if strings.Contains(r.Host, "libby.cards") {
-		fmt.Print("This is the Libby.cards site")
-	} else if strings.Contains(r.Host, "theologian.chat") {
-		fmt.Print("This is the theologian.chat site")
+	reverseProxyRequest(w, r)
+}
+func reverseProxyRequest(w http.ResponseWriter, r *http.Request) {
+	// reverse proxy request to localhost on the port
+	proxy, ok := reverseProxyMap[strings.TrimPrefix(r.Host, "www.")]
+	if !ok {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	} else {
+		proxy.ServeHTTP(w, r)
 	}
 }
 
