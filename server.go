@@ -20,13 +20,25 @@ type domainPort struct {
 	port   string
 }
 
-var sites = []domainPort{
-	{"jacksonstone.info", ":3000"},
-	{"libby.cards", ":3001"},
-	{"theologian.chat", ":3002"}}
+// Use DOMAINS_TO_PORTS which is a string formatted like so: "domain1:port1,domain2:port2,domain3:port3"
+var sites = []domainPort{}
 
 var reverseProxyMap = make(map[string]*httputil.ReverseProxy)
 
+func initializeSiteList() {
+	domainsToPorts := os.Getenv("DOMAINS_TO_PORTS")
+	if domainsToPorts == "" {
+		log.Fatal("DOMAINS_TO_PORTS environment variable must be set and formatted like so: \"domain1:port1,domain2:port2,domain3:port3\"")
+	}
+	domainsToPortsSplit := strings.Split(domainsToPorts, ",")
+	for _, domainToPort := range domainsToPortsSplit {
+		domainPortSplit := strings.Split(domainToPort, ":")
+		if len(domainPortSplit) != 2 {
+			log.Fatalf("Invalid domain to port mapping: %s", domainToPort)
+		}
+		sites = append(sites, domainPort{domain: domainPortSplit[0], port: ":" + domainPortSplit[1]})
+	}
+}
 func initializeReverseProxies() {
 	for _, site := range sites {
 		target, err := url.Parse(fmt.Sprintf("http://localhost%s", site.port))
@@ -37,8 +49,11 @@ func initializeReverseProxies() {
 	}
 }
 func main() {
+	initializeSiteList()
 	initializeReverseProxies()
-
+	for _, site := range sites {
+		fmt.Printf("Domain: %s, Port: %s\n", site.domain, site.port)
+	}
 	http.HandleFunc("/", rootHandler)
 
 	// Determine if we're in a local development environment
@@ -69,7 +84,7 @@ func main() {
 			fmt.Println("Starting HTTPS server on :443")
 			log.Fatal(srv.ListenAndServeTLS("", ""))
 		} else {
-			fmt.Println("Skipping HTTPS server start as no certs were found. This is likely because the server is being set up for the first time.")
+			fmt.Println("Skipping HTTPS server start as no certs were found. This is likely because the server is being set up for the first time. or you are actually doing local development, in which case provide LOCAL_DEV=true when building to skip https related functionality.")
 			startHTTPServer()
 		}
 
