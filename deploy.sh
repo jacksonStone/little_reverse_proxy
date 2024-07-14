@@ -6,7 +6,7 @@ GOOS=linux GOARCH=amd64 go build  -o reverse_proxy ./server.go|| { echo "Go buil
 
 # Step 2: SCP the Go binary to the EC2 instance
 echo "Copying Go binary to EC2 instance..."
-scp -i "$EC2_PEM_PATH" reverse_proxy ubuntu@$EC2_PUBLIC_IP:/home/ubuntu/.temp/ || { echo "SCP failed"; exit 1; }
+scp -i $EC2_PEM_PATH reverse_proxy ubuntu@$EC2_PUBLIC_IP:/home/ubuntu/.temp/ || { echo "SCP failed"; exit 1; }
 
 # Step 3: SSH into the EC2 instance and move the file
 echo "Connecting to EC2 instance and moving the file..."

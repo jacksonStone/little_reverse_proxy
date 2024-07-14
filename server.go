@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"crypto/tls"
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+
 	"time"
 )
 
@@ -51,6 +53,7 @@ func initializeReverseProxies() {
 func main() {
 	initializeSiteList()
 	initializeReverseProxies()
+	fmt.Println("SQL URL: ", os.Getenv("SQLITE_URL"))
 	for _, site := range sites {
 		fmt.Printf("Domain: %s, Port: %s\n", site.domain, site.port)
 	}
@@ -145,7 +148,30 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, newURL, http.StatusMovedPermanently)
 		return
 	}
+	go writeVisitRecord(host+r.URL.Path, r.RemoteAddr)
 	reverseProxyRequest(w, r)
+}
+func writeVisitRecord(url string, remoteAddr string) {
+	if strings.Contains(url, "favicon.ico") {
+		return
+	}
+	sqliteUrl := os.Getenv("SQLITE_URL")
+	if sqliteUrl == "" {
+		fmt.Println("SQLITE_URL environment variable must be set, skipping persisting visit record")
+		return
+	}
+	h := sha256.New()
+	h.Write([]byte(remoteAddr))
+	hasedIp := fmt.Sprintf("%x", h.Sum(nil))
+	// send the SQL query to the locally running SQLite wrapper
+	response, err := http.Post(sqliteUrl+"/execute", "application/json",
+		strings.NewReader(fmt.Sprintf(`
+		{"query":"INSERT INTO reverse_proxy_visits (url_without_params, vistor_hash) VALUES (?, ?)","parameters":["%s", "%s"]}`, url, hasedIp)))
+	if err != nil {
+		fmt.Println("Failed to write visit record to SQLite: ", err)
+	}
+	print(response)
+
 }
 func reverseProxyRequest(w http.ResponseWriter, r *http.Request) {
 	// reverse proxy request to localhost on the port
