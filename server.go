@@ -152,8 +152,13 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 	reverseProxyRequest(w, r)
 }
 func writeVisitRecord(url string, remoteAddr string) {
-	if strings.Contains(url, "favicon.ico") {
-		return
+	// Skip requests that are likely not indicative of a page visit
+	// (Imperfect)
+	excludeList := []string{"/favicon.ico", "/api/", ".js", ".css", ".png", ".jpeg"}
+	for _, exclude := range excludeList {
+		if strings.Contains(url, exclude) {
+			return
+		}
 	}
 	sqliteUrl := os.Getenv("SQLITE_URL")
 	if sqliteUrl == "" {
@@ -163,11 +168,12 @@ func writeVisitRecord(url string, remoteAddr string) {
 	h := sha256.New()
 
 	h.Write([]byte(extractIpFromRemoteAddr(remoteAddr)))
-	hasedIp := fmt.Sprintf("%x", h.Sum(nil))
+	hasedIp := fmt.Sprintf("%x", h.Sum(nil))[0:10]
+	urlWithoutWww := strings.TrimPrefix(url, "www.")
 	// send the SQL query to the locally running SQLite wrapper
 	_, err := http.Post(sqliteUrl+"/execute", "application/json",
 		strings.NewReader(fmt.Sprintf(`
-		{"query":"INSERT INTO reverse_proxy_visits (url_without_params, vistor_hash) VALUES (?, ?)","parameters":["%s", "%s"]}`, url, hasedIp)))
+		{"query":"INSERT INTO reverse_proxy_visits (url_without_params, vistor_hash) VALUES (?, ?)","parameters":["%s", "%s"]}`, urlWithoutWww, hasedIp)))
 	if err != nil {
 		fmt.Println("Failed to write visit record to SQLite: ", err)
 	}
