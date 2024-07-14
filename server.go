@@ -38,12 +38,12 @@ func initializeSiteList() {
 		if len(domainPortSplit) != 2 {
 			log.Fatalf("Invalid domain to port mapping: %s", domainToPort)
 		}
-		sites = append(sites, domainPort{domain: domainPortSplit[0], port: ":" + domainPortSplit[1]})
+		sites = append(sites, domainPort{domain: domainPortSplit[0], port: domainPortSplit[1]})
 	}
 }
 func initializeReverseProxies() {
 	for _, site := range sites {
-		target, err := url.Parse(fmt.Sprintf("http://localhost%s", site.port))
+		target, err := url.Parse(fmt.Sprintf("http://localhost:%s", site.port))
 		if err != nil {
 			log.Fatalf("Failed to parse URL: %v", err)
 		}
@@ -161,16 +161,26 @@ func writeVisitRecord(url string, remoteAddr string) {
 		return
 	}
 	h := sha256.New()
-	h.Write([]byte(remoteAddr))
+
+	h.Write([]byte(extractIpFromRemoteAddr(remoteAddr)))
 	hasedIp := fmt.Sprintf("%x", h.Sum(nil))
 	// send the SQL query to the locally running SQLite wrapper
-	response, err := http.Post(sqliteUrl+"/execute", "application/json",
+	_, err := http.Post(sqliteUrl+"/execute", "application/json",
 		strings.NewReader(fmt.Sprintf(`
 		{"query":"INSERT INTO reverse_proxy_visits (url_without_params, vistor_hash) VALUES (?, ?)","parameters":["%s", "%s"]}`, url, hasedIp)))
 	if err != nil {
 		fmt.Println("Failed to write visit record to SQLite: ", err)
 	}
-	print(response)
+
+}
+func extractIpFromRemoteAddr(remoteAddr string) string {
+	ipPlusHex := strings.Split(remoteAddr, ":")[0]
+	// get last15 characters
+	// 111.111.111.111
+	if len(ipPlusHex) <= 15 {
+		return ipPlusHex
+	}
+	return ipPlusHex[len(ipPlusHex)-15:]
 
 }
 func reverseProxyRequest(w http.ResponseWriter, r *http.Request) {
