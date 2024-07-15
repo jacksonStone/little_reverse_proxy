@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -174,8 +173,11 @@ func writeVisitRecord(url string, remoteAddr string, duration int64) {
 	h.Write([]byte(extractIpFromRemoteAddr(remoteAddr)))
 	hasedIp := fmt.Sprintf("%x", h.Sum(nil))[0:10]
 	urlWithoutWww := strings.TrimPrefix(url, "www.")
-	jsonRequest := fmt.Sprintf(`
-	{"query":"INSERT INTO reverse_proxy_visits (url_without_params, vistor_hash, duration) VALUES (?, ?, ?)","parameters":["%s", "%s", %s]}`, urlWithoutWww, hasedIp, strconv.FormatInt(duration, 10))
+	jsonRequest := fmt.Sprintf(`{
+		"query":"INSERT INTO reverse_proxy_visits (url_without_params, vistor_hash, duration) VALUES (?, ?, ?)",
+		"parameters":["%s", "%s", %d],
+		"database": "visits"
+	}`, urlWithoutWww, hasedIp, duration)
 	fmt.Println("Sending request to SQLite: ", jsonRequest)
 	// send the SQL query to the locally running SQLite wrapper
 	_, err := http.Post(sqliteUrl+"/execute", "application/json",
