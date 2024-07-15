@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,7 +13,6 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-
 	"time"
 )
 
@@ -148,22 +148,26 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, newURL, http.StatusMovedPermanently)
 		return
 	}
-	go writeVisitRecord(host+r.URL.Path, r.RemoteAddr)
 	reverseProxyRequest(w, r)
 }
-func writeVisitRecord(url string, remoteAddr string) {
+
+/**
+ * Write the visit record to the SQLite database
+ * A return value of 0 means no record was written
+ */
+func writeVisitRecord(url string, remoteAddr string, duration int) int {
 	// Skip requests that are likely not indicative of a page visit
 	// (Imperfect)
-	excludeList := []string{"/favicon.ico", "/api/", ".js", ".css", ".png", ".jpeg"}
+	excludeList := []string{"/favicon.ico"}
 	for _, exclude := range excludeList {
 		if strings.Contains(url, exclude) {
-			return
+			return 0
 		}
 	}
 	sqliteUrl := os.Getenv("SQLITE_URL")
 	if sqliteUrl == "" {
 		fmt.Println("SQLITE_URL environment variable must be set, skipping persisting visit record")
-		return
+		return 0
 	}
 	h := sha256.New()
 
@@ -171,12 +175,22 @@ func writeVisitRecord(url string, remoteAddr string) {
 	hasedIp := fmt.Sprintf("%x", h.Sum(nil))[0:10]
 	urlWithoutWww := strings.TrimPrefix(url, "www.")
 	// send the SQL query to the locally running SQLite wrapper
-	_, err := http.Post(sqliteUrl+"/execute", "application/json",
+	response, err := http.Post(sqliteUrl+"/execute", "application/json",
 		strings.NewReader(fmt.Sprintf(`
-		{"query":"INSERT INTO reverse_proxy_visits (url_without_params, vistor_hash) VALUES (?, ?)","parameters":["%s", "%s"]}`, urlWithoutWww, hasedIp)))
+		{"query":"INSERT INTO reverse_proxy_visits (url_without_params, vistor_hash, duration) VALUES (?, ?, ?)","parameters":["%s", "%s", %d]}`, urlWithoutWww, hasedIp, duration)))
 	if err != nil {
 		fmt.Println("Failed to write visit record to SQLite: ", err)
+		return 0
 	}
+	defer response.Body.Close()
+	// parse the jsdon response
+	var result map[string]interface{}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		fmt.Println("Failed to parse response from SQLite: ", err)
+	}
+	fmt.Println("Response from SQLite: ", result)
+	return int(result["id"].(int64))
+	// add to request context
 
 }
 func extractIpFromRemoteAddr(remoteAddr string) string {
@@ -195,7 +209,10 @@ func reverseProxyRequest(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	} else {
+		startTime := time.Now().Unix()
 		proxy.ServeHTTP(w, r)
+		endTime := time.Now().Unix()
+		writeVisitRecord(r.Host+r.URL.Path, r.RemoteAddr, endTime-startTime)
 	}
 }
 
