@@ -6,7 +6,7 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu
 ExecStart=sudo -E /home/ubuntu/reverse_proxy
-EnvironmentFile=/home/ubuntu/env
+EnvironmentFile=/home/ubuntu/.ubuntu-env
 Restart=on-failure
 [Install]
 WantedBy=multi-user.target
