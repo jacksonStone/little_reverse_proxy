@@ -168,10 +168,7 @@ func writeVisitRecord(url string, remoteAddr string, duration int64) {
 		fmt.Println("SQLITE_URL environment variable must be set, skipping persisting visit record")
 		return
 	}
-	h := sha256.New()
-
-	h.Write([]byte(extractIpFromRemoteAddr(remoteAddr)))
-	hasedIp := fmt.Sprintf("%x", h.Sum(nil))[0:10]
+	hasedIp := produceHashFromRemoteAddr(remoteAddr)
 	urlWithoutWww := strings.TrimPrefix(url, "www.")
 	jsonRequest := fmt.Sprintf(`{
 		"query":"INSERT INTO reverse_proxy_visits (url_without_params, vistor_hash, duration) VALUES (?, ?, ?)",
@@ -188,14 +185,48 @@ func writeVisitRecord(url string, remoteAddr string, duration int64) {
 	}
 
 }
-func extractIpFromRemoteAddr(remoteAddr string) string {
+
+/**
+ * Write the visit record to the SQLite database
+ * A return value of 0 means no record was written
+ */
+func writeWebsiteVisitRecord(url string, remoteAddr string) {
+	sqliteUrl := os.Getenv("SQLITE_URL")
+	if sqliteUrl == "" {
+		fmt.Println("SQLITE_URL environment variable must be set, skipping persisting visit record")
+		return
+	}
+	hasedIp := produceHashFromRemoteAddr(remoteAddr)
+	urlWithoutWww := strings.TrimPrefix(url, "www.")
+	jsonRequest := fmt.Sprintf(`{
+		"query":"INSERT INTO reverse_proxy_website_visits (url_without_params, vistor_hash) VALUES (?, ?)",
+		"parameters":["%s", "%s"],
+		"database": "visits"
+	}`, urlWithoutWww, hasedIp)
+	// send the SQL query to the locally running SQLite wrapper
+	_, err := http.Post(sqliteUrl+"/execute", "application/json",
+		strings.NewReader(jsonRequest))
+	if err != nil {
+		fmt.Println("Failed to write website visit record to SQLite: ", err)
+		return
+	}
+}
+func produceHashFromRemoteAddr(remoteAddr string) string {
 	ipPlusHex := strings.Split(remoteAddr, ":")[0]
+	var hasedIp string
 	// get last15 characters
 	// 111.111.111.111
 	if len(ipPlusHex) <= 15 {
-		return ipPlusHex
+		hasedIp = ipPlusHex
+	} else {
+		hasedIp = ipPlusHex[len(ipPlusHex)-15:]
 	}
-	return ipPlusHex[len(ipPlusHex)-15:]
+	h := sha256.New()
+
+	h.Write([]byte(hasedIp))
+	return fmt.Sprintf("%x", h.Sum(nil))[0:10]
+}
+func extractIpFromRemoteAddr(remoteAddr string) string {
 
 }
 func reverseProxyRequest(w http.ResponseWriter, r *http.Request) {
@@ -204,6 +235,15 @@ func reverseProxyRequest(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	} else {
+		// if this is a request to a /_ping endpoint, we want to return a 200
+		// This is fired from the web-browser in javascript to help me distinguish between a real visit and a bot
+		// The bots can of course still make requests to /_ping, or execute the JS code, but this is a good start
+		// to filter out most trivial bots.
+		if r.URL.Path == "/_ping" {
+			w.WriteHeader(http.StatusOK)
+			writeWebsiteVisitRecord(r.Host+r.URL.Path, r.RemoteAddr)
+			return
+		}
 		startTime := time.Now().UnixMilli()
 		proxy.ServeHTTP(w, r)
 		endTime := time.Now().UnixMilli()
