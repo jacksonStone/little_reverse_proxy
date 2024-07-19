@@ -226,9 +226,6 @@ func produceHashFromRemoteAddr(remoteAddr string) string {
 	h.Write([]byte(hasedIp))
 	return fmt.Sprintf("%x", h.Sum(nil))[0:10]
 }
-func extractIpFromRemoteAddr(remoteAddr string) string {
-
-}
 func reverseProxyRequest(w http.ResponseWriter, r *http.Request) {
 	// reverse proxy request to localhost on the port
 	proxy, ok := reverseProxyMap[strings.TrimPrefix(r.Host, "www.")]
