@@ -236,9 +236,9 @@ func reverseProxyRequest(w http.ResponseWriter, r *http.Request) {
 		// This is fired from the web-browser in javascript to help me distinguish between a real visit and a bot
 		// The bots can of course still make requests to /_ping, or execute the JS code, but this is a good start
 		// to filter out most trivial bots.
-		if r.URL.Path == "/_ping" {
+		if strings.HasSuffix(r.URL.Path, "/_ping") {
 			w.WriteHeader(http.StatusOK)
-			writeWebsiteVisitRecord(r.Host+r.URL.Path, r.RemoteAddr)
+			writeWebsiteVisitRecord(r.Host+strings.TrimSuffix(r.URL.Path, "/_ping"), r.RemoteAddr)
 			return
 		}
 		startTime := time.Now().UnixMilli()
