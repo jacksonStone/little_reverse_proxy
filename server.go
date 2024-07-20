@@ -42,7 +42,7 @@ func initializeSiteList() {
 }
 func initializeReverseProxies() {
 	for _, site := range sites {
-		target, err := url.Parse(fmt.Sprintf("http://localhost:%s", site.port))
+		target, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%s", site.port))
 		if err != nil {
 			log.Fatalf("Failed to parse URL: %v", err)
 		}
@@ -141,6 +141,14 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 		// Prepend "www." to the host
 		newHost := "www." + host
 		newURL := "https://" + newHost + r.URL.Path
+		if r.URL.RawQuery != "" {
+			newURL += "?" + r.URL.RawQuery
+		}
+		http.Redirect(w, r, newURL, http.StatusMovedPermanently)
+		return
+	}
+	if strings.HasSuffix(host, "jacksonstone.info") {
+		newURL := "https://" + "www.jacksonst.one" + r.URL.Path
 		if r.URL.RawQuery != "" {
 			newURL += "?" + r.URL.RawQuery
 		}
