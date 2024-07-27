@@ -249,6 +249,11 @@ func reverseProxyRequest(w http.ResponseWriter, r *http.Request) {
 			writeWebsiteVisitRecord(r.Host+strings.TrimSuffix(r.URL.Path, "/_ping"), r.RemoteAddr)
 			return
 		}
+		if strings.HasSuffix(r.URL.Path, "/robots.txt") {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("User-agent: *\nDisallow: /"))
+			return
+		}
 		startTime := time.Now().UnixMilli()
 		proxy.ServeHTTP(w, r)
 		endTime := time.Now().UnixMilli()
