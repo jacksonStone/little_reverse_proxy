@@ -251,7 +251,7 @@ func reverseProxyRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		if strings.HasSuffix(r.URL.Path, "/robots.txt") {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("User-agent: *\nDisallow: /"))
+			w.Write([]byte("User-agent: *\nDisallow:"))
 			return
 		}
 		startTime := time.Now().UnixMilli()
