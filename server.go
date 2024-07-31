@@ -240,11 +240,11 @@ func reverseProxyRequest(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	} else {
-		// if this is a request to a /_ping endpoint, we want to return a 200
+		// if this is a request to a /____reserved/_ping endpoint, we want to return a 200
 		// This is fired from the web-browser in javascript to help me distinguish between a real visit and a bot
-		// The bots can of course still make requests to /_ping, or execute the JS code, but this is a good start
+		// The bots can of course still make requests to /____reserved/_ping, or execute the JS code, but this is a good start
 		// to filter out most trivial bots.
-		if strings.HasSuffix(r.URL.Path, "/_ping") {
+		if strings.HasSuffix(r.URL.Path, "/____reserved/_ping") {
 			w.WriteHeader(http.StatusOK)
 			writeWebsiteVisitRecord(r.Host+strings.TrimSuffix(r.URL.Path, "/_ping"), r.RemoteAddr)
 			return
