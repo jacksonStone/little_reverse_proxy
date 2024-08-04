@@ -246,7 +246,7 @@ func reverseProxyRequest(w http.ResponseWriter, r *http.Request) {
 		// to filter out most trivial bots.
 		if strings.HasSuffix(r.URL.Path, "/____reserved/_ping") {
 			w.WriteHeader(http.StatusOK)
-			writeWebsiteVisitRecord(r.Host+strings.TrimSuffix(r.URL.Path, "/_ping"), r.RemoteAddr)
+			writeWebsiteVisitRecord(r.Host+strings.TrimSuffix(r.URL.Path, "/____reserved/_ping"), r.RemoteAddr)
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/robots.txt") {
