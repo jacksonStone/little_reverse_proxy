@@ -21,6 +21,7 @@ type domainPort struct {
 	port   string
 }
 
+// mo/link example
 // Use DOMAINS_TO_PORTS which is a string formatted like so: "domain1:port1,domain2:port2,domain3:port3"
 var sites = []domainPort{}
 
